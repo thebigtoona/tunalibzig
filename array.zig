@@ -55,7 +55,7 @@ pub fn Array(comptime T: type, capacity: usize) type {
 
         /// add another element at the end of the array, provided the capacity
         /// will allow for it. 
-        pub fn append(this: *This, element: T) !void {
+        pub fn add(this: *This, element: T) !void {
             if (this.length >= this.capacity) return ArrayErr.OutOfSpace;
 
             this.items[this.length] = element;
@@ -326,6 +326,40 @@ pub fn Array(comptime T: type, capacity: usize) type {
             
                 if (head_ptr < tail_ptr) this.swapElement(head_ptr, tail_ptr);
             }
+        }
+
+
+        /// returns a new array containing this array merged with a specified 
+        /// array.  the arrays must be sorted.
+        pub fn merge(this: *This, array: anytype) !*Array(T, (this.capacity + array.capacity)) {
+            if (!this.isSorted()) return ArrayErr.NotSorted;
+
+            var i: usize = 0;
+            var j: usize = 0;
+            var k: usize = 0;
+
+            var new_capacity: usize = this.capacity + array.capacity;
+
+            var result: Array = Array(T, new_capacity).init(this.allocator);
+
+            while (k < (this.length + array.length - 2))
+            {
+                if (this.items[i] < array.items[j])
+                {
+                    try result.add(this.items.*[i]);
+                    i += 1;
+                }
+
+                if (array.items[j] < this.items[i])
+                {
+                    try result.add(array.items.*[j]);
+                    j += 1;
+                }
+            }
+            
+
+            return result;
+            
         }
 
 
