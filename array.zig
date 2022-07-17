@@ -117,8 +117,8 @@ pub fn Array(comptime T: type, capacity: usize) type {
         /// runs optimized search based on whether the data is ordered
         /// if ordered, the data will run on binary search, otherwise,
         /// it will run a linear search
-        pub fn search(this: *This, key: T, ordered: bool) !usize {
-            if (ordered) return this.binarySearch(key);
+        pub fn search(this: *This, key: T) !usize {
+            if (this.isSorted()) return this.binarySearch(key);
             return this.linearSearch(key);
         }
 
