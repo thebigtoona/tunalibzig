@@ -1,6 +1,7 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
-
+const log = std.log;
+const debug = std.debug;
+const mem = std.mem;
 
 /// Errors associated with the array struct below
 pub const ArrayErr = error{
@@ -10,7 +11,6 @@ pub const ArrayErr = error{
     NotSorted,
 };
 
-
 pub fn Array(comptime T: type) type {
     return struct {
         const This = @This();
@@ -18,13 +18,12 @@ pub fn Array(comptime T: type) type {
         items: []T,
         length: usize,
         capacity: usize,
-        allocator: Allocator,
+        allocator: mem.Allocator,
 
-        /// initialize a new array without any data, to the capacity specified 
-        /// on creation for the type specified.  this requires any allocator.
-        /// deinitialize with deinit().
-        pub fn init(allocator: Allocator) !This {
-            return This{
+        /// initialize a new Array instance.  Deinitialize with instance 
+        /// `deinit()` method. takes in an allocator.
+        pub fn init(allocator: mem.Allocator) This {
+            return .{
                 .items = &[_]T{},
                 .length = 0,
                 .capacity = 0,
@@ -32,106 +31,102 @@ pub fn Array(comptime T: type) type {
             };
         }
 
-        /// print the elements of the array, ignoring the empty slots at the end 
+        /// deinitialize Array. no failing
+        pub fn deinit(this: *This) void {
+            this.allocator.destroy(this.items.ptr);
+        }
+
+        /// grows the capacity of the array
+        pub fn grow(this: *This, new_capacity: usize) mem.Allocator.Error!void {
+            var cap: usize = this.capacity + new_capacity;
+            var old_mem = this.items.ptr[0..this.capacity];
+            var new_mem = try this.allocator.reallocAtLeast(old_mem, cap);
+
+            this.items.ptr = new_mem.ptr;
+            this.capacity = cap;
+        }
+
+        /// display Array items and metadata
         pub fn display(this: *This) void {
             var i: usize = 0;
-            std.debug.print("\n", .{});
+            std.debug.print("items: ", .{});
             while (i < this.length) {
-                std.debug.print("{}, ", .{this.items[i]});
+                std.debug.print("{}, ", .{this.items.ptr[i]});
                 i += 1;
             }
-            std.debug.print("\n", .{});
+            std.debug.print("\nlength: {},\ncapacity: {}", .{ this.length, this.capacity });
+            std.debug.print("\nis sorted: {}", .{this.isSorted()});
         }
 
         /// returns a bool specifing whether the array has been sorted
         pub fn isSorted(this: *This) bool {
             var i: usize = 0;
             while (i < this.length - 1) {
-                if (this.items[i] > this.items[i + 1]) return false;
+                if (this.items.ptr[i] > this.items.ptr[i + 1]) return false;
                 i += 1;
             }
             return true;
         }
 
-        /// extends the capacity of the array to at least 'new_capacity' els
-        pub fn resizeCapacity(this: *This, new_capacity: usize) !void 
-        {
-            if (this.capacity >= new_capacity) return;
+        // add an item to the end of the Array
+        pub fn add(this: *This, item: T) !void {
+            if (this.length >= this.capacity) try this.grow(1);
+            var i: usize = 0;
+            while (i < this.length) i += 1;
 
-            var old_mem = this.items.ptr[0..this.capacity];
-            var new_mem = try this.allocator.reallocAtLeast(old_mem, new_capacity);
-
-            this.items.ptr = new_mem.ptr;
-            this.capacity = new_mem.len;
-        }
-
-        pub fn append(this: *This, item: T) !void {
-            const new_item_ptr = try this.addOnePtr();
-            new_item_ptr.* = item;
-        }
-
-
-        /// add another element at the end of the array, provided the capacity
-        /// will allow for it. 
-        pub fn addOnePtr(this: *This) !*T {
-            if (this.length >= this.capacity)
-            {
-                var new_cap: usize = this.capacity + 1;
-                try this.resizeCapacity(new_cap);
-            } 
-
-            this.items.len += 1; 
-            this.length = this.items.len; 
-            return &this.items[this.items.len - 1]; 
-        }
-
-        /// insert into the array at a given index. elements are shifted 
-        /// right in the array to make room. only works if there is space
-        /// left in the array for another item.
-        pub fn insert(this: *This, index: usize, element: T) !void {
-            // we need to know if we have room for this
-            if (this.length >= this.capacity) return ArrayErr.OutOfSpace;
-
-            var i: usize = this.length - 1;
-
-            while (i >= index) {
-                this.items.*[i + 1] = this.items.*[i];
-                i -= 1;
-            }
-
-            this.items[index] = element;
+            this.items.ptr[i] = item;
             this.length += 1;
         }
 
-        /// inserts into a sorted list provided there is capacity to do so
-        /// if there is no space, or the list is not sorted, 
-        /// the fn will return an err.
-        pub fn insertSorted(this: *This, item: T) !void {
-            if (this.length == this.capacity) return ArrayErr.OutOfSpace;
-            if (!this.isSorted()) return ArrayErr.NotSorted;
+        /// insert an item into a given index.  items will be shifted right
+        /// after the index in question
+        pub fn insert(this: *This, index: usize, item: T) !void {
+            if (this.length >= this.capacity) try this.grow(1);
+
             var i: usize = this.length - 1;
-            while (this.items[i] > item) {
-                this.items.*[i + 1] = this.items.*[i];
+            while (i >= index) {
+                this.items.ptr[i + 1] = this.items.ptr[i];
                 i -= 1;
             }
 
-            this.items[i + 1] = item;
+            this.items.ptr[index] = item;
+            this.length += 1;
+        }
+
+        /// insert an item into this Array, sorted. if the array is not sorted
+        /// smallest->largest, the fn will return an error.
+        pub fn insertSorted(this: *This, item: T) !void {
+            if (!this.isSorted()) return ArrayErr.NotSorted;
+            if (this.length >= this.capacity) try this.grow(1);
+
+            var i: usize = this.length - 1;
+            while (this.items.ptr[i] > item) {
+                this.items.ptr[i + 1] = this.items.ptr[i];
+                i -= 1;
+            }
+
+            this.items.ptr[i + 1] = item;
             this.length += 1;
         }
 
         /// remove item by index
-        /// time complexity: `O(n)`
         pub fn delete(this: *This, index: usize) !void {
-            if (index > this.length) return ArrayErr.IndexOutOfBounds;
+            if (index >= this.length) return ArrayErr.IndexOutOfBounds;
 
             var i: usize = index;
             while (i < this.length - 1) {
-                // shift left
-                this.items[i] = this.items[i + 1];
+                this.items.ptr[i] = this.items.ptr[i + 1];
                 i += 1;
             }
 
             this.length -= 1;
+        }
+
+        /// swaps elements at x and y index in the array
+        pub fn swapItem(this: *This, x_index: usize, y_index: usize) void {
+            var temp: T = this.items.ptr[y_index];
+            this.items.ptr[y_index] = this.items.ptr[x_index];
+            this.items.ptr[x_index] = temp;
         }
 
         /// runs optimized search based on whether the data is ordered
@@ -150,8 +145,8 @@ pub fn Array(comptime T: type) type {
         fn linearSearch(this: *This, key: T) !usize {
             var i: usize = 0;
             while (i < this.length) {
-                if (key == this.items.*[i]) {
-                    this.swapElement(0, i); // optimization for future searches
+                if (key == this.items.ptr[i]) {
+                    this.swapItem(0, i); // optimization for future searches
                     return i;
                 }
                 i += 1;
@@ -165,17 +160,17 @@ pub fn Array(comptime T: type) type {
         /// 
         /// max time complexity is `O(log(n))` 
         fn binarySearch(this: *This, key: usize) !usize {
-            var high: usize = this.items.*[this.length - 1];
-            var low: usize = this.items.*[0];
+            var high: usize = this.items.ptr[this.length - 1];
+            var low: usize = this.items.ptr[0];
             var mid: usize = 0;
 
             // while low is not greater than high, we are still searching
             while (low <= high) {
                 mid = ((low + high) / 2);
                 // found the key
-                if (key == this.items.*[mid]) return mid
+                if (key == this.items.ptr[mid]) return mid
                 // key is lower
-                else if (key < this.items.*[mid]) high = mid - 1
+                else if (key < this.items.ptr[mid]) high = mid - 1
                 // key is higher
                 else low = mid + 1;
             }
@@ -184,34 +179,32 @@ pub fn Array(comptime T: type) type {
             return ArrayErr.NotFound;
         }
 
-        /// retrieve an element by index. returns an error if the given index
-        /// was out of range.
+        /// get item by index
         pub fn get(this: *This, index: usize) !T {
             if (index < 0 or index >= this.length) return ArrayErr.IndexOutOfBounds;
-            return this.items.*[index];
+            return this.items.ptr[index];
         }
 
-        /// set the given index to a value specified. returns an error if the 
-        /// index given was not in range.
+        /// set item by index
         pub fn set(this: *This, index: usize, value: T) !void {
             if (index < 0 or index >= this.length) return ArrayErr.IndexOutOfBounds;
-            this.items.*[index] = value;
+            this.items.ptr[index] = value;
         }
 
         /// runs the max depending on whether the data is ordered or not
         /// specified by the param ordered as a bool
-        pub fn max(this: *This, ordered: bool) T {
-            if (ordered) return this.maxOrdered();
+        pub fn max(this: *This) T {
+            if (this.isSorted()) return this.maxOrdered();
             return this.maxUnordered();
         }
 
         /// returns the max of the elements in an unordered list
         /// time complexity is O(n)
         fn maxUnordered(this: *This) T {
-            var m = this.items.*[0];
+            var m = this.items.ptr[0];
             var i: usize = 1;
             while (i <= this.length - 1) {
-                if (m < this.items.*[i]) m = this.items.*[i];
+                if (m < this.items.ptr[i]) m = this.items.ptr[i];
                 i += 1;
             }
             return m;
@@ -220,22 +213,22 @@ pub fn Array(comptime T: type) type {
         /// assumes an ordered list and returns the last value, as 
         /// that would be max in an ordered list. 
         fn maxOrdered(this: *This) T {
-            return this.items.*[this.length - 1]; // return the last el
+            return this.items.ptr[this.length - 1]; // return the last el
         }
 
         /// returns the min value located in the list via whichever 
         /// method is more time efficent given ordering
-        pub fn min(this: *This, ordered: bool) T {
-            if (ordered) return this.minOrdered();
+        pub fn min(this: *This) T {
+            if (this.isSorted()) return this.minOrdered();
             return this.minUnordered();
         }
 
         /// returns the min value checked against every element in the list
         fn minUnordered(this: *This) T {
-            var m = this.items.*[0];
+            var m = this.items.ptr[0];
             var i: usize = 1;
             while (i <= this.length - 1) {
-                if (m > this.items.*[i]) m = this.items.*[i];
+                if (m > this.items.ptr[i]) m = this.items.ptr[i];
                 i += 1;
             }
             return m;
@@ -244,15 +237,15 @@ pub fn Array(comptime T: type) type {
         /// returns the head element, as this would be the min in an ordered 
         /// list
         fn minOrdered(this: *This) T {
-            return this.items.*[0];
+            return this.items.ptr[0];
         }
 
         /// sums the elements in the array. time complexity is O(n).
         pub fn sum(this: *This) T {
-            var acc: T = this.items.*[0];
+            var acc: T = this.items.ptr[0];
             var i: usize = 1;
             while (i <= this.length - 1) {
-                acc += this.items.*[i];
+                acc += this.items.ptr[i];
                 i += 1;
             }
             return acc;
@@ -270,9 +263,9 @@ pub fn Array(comptime T: type) type {
             var temp: T = 0;
 
             while (i < j) {
-                temp = this.items.*[i];
-                this.items.*[i] = this.items.*[j];
-                this.items.*[j] = temp;
+                temp = this.items.ptr[i];
+                this.items.ptr[i] = this.items.ptr[j];
+                this.items.ptr[j] = temp;
 
                 i += 1;
                 j -= 1;
@@ -283,10 +276,10 @@ pub fn Array(comptime T: type) type {
         pub fn shiftLeft(this: *This) void {
             var i: usize = 0; // start one ahead of head
             while (i < this.length) {
-                this.items.*[i] = this.items.*[i + 1];
+                this.items.ptr[i] = this.items.ptr[i + 1];
                 i += 1;
             }
-            this.items.*[this.length - 1] = 0; // overwrite final el, to remove dup
+            this.items.ptr[this.length - 1] = 0; // overwrite final el, to remove dup
         }
 
         /// shifts data to the right. if len and capacity are equal, tail data is lost
@@ -296,27 +289,27 @@ pub fn Array(comptime T: type) type {
 
             // trying to include case where len is less than cap in one condition
             while (i > 0) {
-                this.items.*[i] = this.items.*[i - 1];
+                this.items.ptr[i] = this.items.ptr[i - 1];
                 i -= 1;
             }
 
-            this.items.*[0] = 0; // overwrite head el
+            this.items.ptr[0] = 0; // overwrite head el
         }
 
         /// leverages shift to rotate the array to the left. no data loss, head
         /// data will be at the end of the array
         pub fn rotateLeft(this: *This) void {
-            var head: T = this.items.*[0];
+            var head: T = this.items.ptr[0];
             this.shiftLeft();
-            this.items.*[this.length - 1] = head;
+            this.items.ptr[this.length - 1] = head;
         }
 
         /// leverages shift to rotate the array to the right. tail data is set
         /// at the head of the array.
         pub fn rotateRight(this: *This) void {
-            var tail: T = this.items.*[this.length - 1];
+            var tail: T = this.items.ptr[this.length - 1];
             this.shiftRight();
-            this.items.*[0] = tail;
+            this.items.ptr[0] = tail;
         }
 
         /// sorts the array such that negative nums are on
@@ -328,51 +321,58 @@ pub fn Array(comptime T: type) type {
 
             while (head_ptr < tail_ptr) {
                 // check right for a pos #
-                while (this.items[head_ptr] < 0) head_ptr += 1;
+                while (this.items.ptr[head_ptr] < 0) head_ptr += 1;
                 // check left for a neg #
-                while (this.items[tail_ptr] > 0) tail_ptr -= 1;
+                while (this.items.ptr[tail_ptr] > 0) tail_ptr -= 1;
 
-                if (head_ptr < tail_ptr) this.swapElement(head_ptr, tail_ptr);
+                if (head_ptr < tail_ptr) this.swapItem(head_ptr, tail_ptr);
             }
         }
 
-        // /// returns a new array containing this array merged with a specified 
-        // /// array.  the arrays must be sorted.
-        // pub fn merge(this: *This, array: anytype) !*Array(T, (this.capacity + array.capacity)) {
-        //     if (!this.isSorted()) return ArrayErr.NotSorted;
 
-        //     var i: usize = 0;
-        //     var j: usize = 0;
-        //     var k: usize = 0;
+        // Class fns
 
-        //     var new_capacity: usize = this.capacity + array.capacity;
 
-        //     var result: Array = Array(T, new_capacity).init(this.allocator);
 
-        //     while (k < (this.length + array.length - 2)) {
-        //         if (this.items[i] < array.items[j]) {
-        //             try result.add(this.items.*[i]);
-        //             i += 1;
-        //         }
+        /// returns an Array, by value, that is comprised of two given sorted
+        /// Arrays, merged. If either array is not sorted, the fn will return a 
+        /// NotSorted error.
+        pub fn merge(allocator: mem.Allocator, a1: *Array(T), a2: *Array(T)) !Array(T)
+        {
+            if (!a1.*.isSorted() or !a2.*.isSorted()) return ArrayErr.NotSorted;
 
-        //         if (array.items[j] < this.items[i]) {
-        //             try result.add(array.items.*[j]);
-        //             j += 1;
-        //         }
-        //     }
+            var i: usize = 0; //a1
+            var j: usize = 0; //a2
+            var k: usize = 0; //a3
 
-        //     return result;
-        // }
+            var a3 = Array(T).init(allocator);
+            var new_capacity = a1.capacity + a2.capacity;
 
-        /// swaps elements at x and y index in the array
-        pub fn swapElement(this: *This, x_index: usize, y_index: usize) void {
-            var temp: T = this.items.*[y_index];
-            this.items[y_index] = this.items.*[x_index];
-            this.items[x_index] = temp;
-        }
+            try a3.grow(new_capacity);
 
-        pub fn deinit(this: *This) void {
-            this.allocator.destroy(this.items);
+            while (k < (a1.length + a2.length))
+            {
+                if (i >= a1.length) try a3.add(a2.items.ptr[j])
+
+                else if (j >= a2.length) try a3.add(a1.items.ptr[i])
+                
+                else if (a1.items.ptr[i] < a2.items.ptr[j])
+                {
+                    try a3.add(a1.items.ptr[i]);
+                    i += 1;
+                }
+
+                else if (a2.items.ptr[j] < a1.items.ptr[i])
+                {
+                    try a3.add(a2.items.ptr[j]);
+                    j += 1;
+                }
+
+                k += 1;
+            }
+
+            
+            return a3;
         }
     };
 }
