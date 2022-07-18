@@ -129,6 +129,26 @@ pub fn Array(comptime T: type) type {
             this.items.ptr[x_index] = temp;
         }
 
+
+        /// get item by index
+        pub fn get(this: *This, index: usize) !T {
+            if (index < 0 or index >= this.length) return ArrayErr.IndexOutOfBounds;
+            return this.items.ptr[index];
+        }
+
+
+        /// set item by index
+        pub fn set(this: *This, index: usize, value: T) !void {
+            if (index < 0 or index >= this.length) return ArrayErr.IndexOutOfBounds;
+            this.items.ptr[index] = value;
+        }
+
+
+        // * 
+        // * Search
+        // * 
+
+
         /// runs optimized search based on whether the data is ordered
         /// if ordered, the data will run on binary search, otherwise,
         /// it will run a linear search
@@ -142,7 +162,7 @@ pub fn Array(comptime T: type) type {
         /// method contains a swap with head
         ///
         /// max time complexity: `O(n)`
-        fn linearSearch(this: *This, key: T) !usize {
+        pub fn linearSearch(this: *This, key: T) !usize {
             var i: usize = 0;
             while (i < this.length) {
                 if (key == this.items.ptr[i]) {
@@ -154,12 +174,13 @@ pub fn Array(comptime T: type) type {
             return ArrayErr.NotFound;
         }
 
-        /// **YOU MUST ORDER THE DATA BEFORE USE for accurate results.** 
         /// search for a given key, via binary style search. needs a key of the 
-        /// given type to perform the search and ordered data.
+        /// given type to perform the search and ordered data. if data is not 
+        /// ordered, the fn will throw an error.
         /// 
         /// max time complexity is `O(log(n))` 
-        fn binarySearch(this: *This, key: usize) !usize {
+        pub fn binarySearch(this: *This, key: usize) !usize {
+            if (!this.isSorted()) return ArrayErr.NotSorted;
             var high: usize = this.items.ptr[this.length - 1];
             var low: usize = this.items.ptr[0];
             var mid: usize = 0;
@@ -179,17 +200,11 @@ pub fn Array(comptime T: type) type {
             return ArrayErr.NotFound;
         }
 
-        /// get item by index
-        pub fn get(this: *This, index: usize) !T {
-            if (index < 0 or index >= this.length) return ArrayErr.IndexOutOfBounds;
-            return this.items.ptr[index];
-        }
 
-        /// set item by index
-        pub fn set(this: *This, index: usize, value: T) !void {
-            if (index < 0 or index >= this.length) return ArrayErr.IndexOutOfBounds;
-            this.items.ptr[index] = value;
-        }
+        // * 
+        // * Operations
+        // * 
+
 
         /// runs the max depending on whether the data is ordered or not
         /// specified by the param ordered as a bool
@@ -255,6 +270,10 @@ pub fn Array(comptime T: type) type {
         pub fn avg(this: *This) T {
             return this.sum() / (@as(T, this.length));
         }
+
+        // *
+        // * Transformations
+        // *
 
         /// reverses all the elements of an array, using a swap. O(n) time
         pub fn reverse(this: *This) void {
@@ -329,10 +348,9 @@ pub fn Array(comptime T: type) type {
             }
         }
 
-
-        // Class fns
-
-
+        // *
+        // * Struct Operations 
+        // *
 
         /// returns an Array, by value, that is comprised of two given sorted
         /// Arrays, merged. If either array is not sorted, the fn will return a 
@@ -374,5 +392,8 @@ pub fn Array(comptime T: type) type {
             
             return a3;
         }
+
+
+
     };
 }
