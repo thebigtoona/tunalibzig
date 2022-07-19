@@ -213,6 +213,61 @@ pub fn Array(comptime T: type) type {
         }
 
 
+        /// find a single missing item using sum of natural nums formula
+        /// in the ordered array and return it as item type.
+        ///
+        /// this function assumes there is only one missing item in the set, as it 
+        /// locates the item by difference. if you need to find multiple missing 
+        /// items use `findMultipleMissingItemsOrdered()` instead.  
+        ///
+        /// if the array is not ordered, the function will return a NotSorted error. 
+        pub fn findSingleMissingItemOrdered(this: *This) !T
+        {
+            if (!this.isSorted()) return ArrayErr.NotSorted;
+
+            // sum of natural nums formula
+            var n: T =  this.items.ptr[this.length-1];
+            var s: T = this.sum();
+            var total: T = @divFloor((n * (n + 1)),@as(T, 2)); 
+            
+            return (total-s);
+        }
+
+        
+        // [] TODO: fix this fn. it's infinite looping or something :/
+        /// returns an Array of the source Array type, which contains
+        /// the missing items from the ordered array
+        pub fn findMultipleMissingItemsOrdered(this: *This, allocator: mem.Allocator) !Array(T)
+        {
+            if (!this.isSorted()) return ArrayErr.NotSorted;
+           
+            var low = this.items.ptr[0];
+            var difference: T = low - 0;
+
+            var results: Array(T) = Array(T).init(allocator);
+
+            var i: usize = 0;
+            while (i < this.length)
+            {
+                
+                var new_i: T = @intCast(T, i); // type casted i to work with
+                var comp_diff: T = (this.items.ptr[i] - new_i);
+
+                // if the difference doesn't match here add the 
+                // missing element and store the new difference
+                if (difference != comp_diff)
+                {
+                    var missing: T = difference + new_i;
+                    try results.add(missing);
+                    difference = comp_diff; 
+                }
+
+                i += 1;
+            }
+
+            return results;
+        }
+
         // * 
         // * Operations
         // * 
@@ -361,7 +416,7 @@ pub fn Array(comptime T: type) type {
         }
 
         // *
-        // * Struct Operations 
+        // * Binary Operations (2 arrays)
         // *
 
         /// returns an Array, by value, that is comprised of two given sorted
@@ -560,5 +615,6 @@ pub fn Array(comptime T: type) type {
         }
 
 
+        
     }; // end return This {}
 } // end pub fn Array(T) {}
