@@ -58,6 +58,13 @@ pub fn Array(comptime T: type) type {
             std.debug.print("\nis sorted: {}", .{this.isSorted()});
         }
 
+
+        pub fn slice(this: *This) []T
+        {
+            return this.items.ptr[0..this.length];
+        }
+
+
         /// returns a bool specifing whether the array has been sorted
         pub fn isSorted(this: *This) bool {
             var i: usize = 0;
