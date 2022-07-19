@@ -11,6 +11,9 @@ pub const ArrayErr = error{
     NotSorted,
 };
 
+
+/// a growable array, which contains items of only type T, and requires an
+/// internal allocator, passed in on init(). deinitialize with deinit() fn
 pub fn Array(comptime T: type) type {
     return struct {
         const This = @This();
@@ -20,10 +23,11 @@ pub fn Array(comptime T: type) type {
         capacity: usize,
         allocator: mem.Allocator,
 
+
         /// initialize a new Array instance.  Deinitialize with instance 
         /// `deinit()` method. takes in an allocator.
         pub fn init(allocator: mem.Allocator) This {
-            return .{
+            return This {
                 .items = &[_]T{},
                 .length = 0,
                 .capacity = 0,
@@ -49,13 +53,14 @@ pub fn Array(comptime T: type) type {
         /// display Array items and metadata
         pub fn display(this: *This) void {
             var i: usize = 0;
-            std.debug.print("items: ", .{});
+            std.debug.print(" \n{{ ", .{});
             while (i < this.length) {
-                std.debug.print("{}, ", .{this.items.ptr[i]});
+                std.debug.print("{},", .{this.items.ptr[i]});
                 i += 1;
             }
-            std.debug.print("\nlength: {},\ncapacity: {}", .{ this.length, this.capacity });
-            std.debug.print("\nis sorted: {}", .{this.isSorted()});
+            std.debug.print(" }}", .{});
+            
+            std.debug.print("\nlength: {},\ncapacity: {}\nsorted: {}", .{ this.length, this.capacity, this.isSorted() });
         }
 
 
@@ -400,7 +405,160 @@ pub fn Array(comptime T: type) type {
             return a3;
         }
 
+        /// merges two sorted arrays, discarding duplicate values. pass in an 
+        /// allocator and ptrs to two sorted arrays. if the arrays are not sorted 
+        /// an error will be returned. otherwise an array, by value, containing
+        /// the merged set will be returned.
+        pub fn mergeSet(allocator: mem.Allocator, a1: *Array(T), a2: *Array(T)) !Array(T)
+        {
+            if (!a1.*.isSorted() or !a2.*.isSorted()) return ArrayErr.NotSorted;
+
+            var i: usize = 0; //a1
+            var j: usize = 0; //a2
+            var k: usize = 0; //a3
+
+            var a3 = Array(T).init(allocator);
+            var new_capacity = a1.capacity + a2.capacity;
+            var new_len = a1.length + a2.length;
+
+            try a3.grow(new_capacity);
+
+            while (k < new_len)
+            {
+                if (i >= a1.length) try a3.add(a2.items.ptr[j])
+
+                else if (j >= a2.length) try a3.add(a1.items.ptr[i])
+
+                // duplicate handling 
+                else if (a1.items.ptr[i] == a2.items.ptr[j]) {
+                    try a3.add(a1.items.ptr[i]); 
+                    i += 1;
+                    j += 1; 
+                    new_len -= 1; 
+                }
+
+                else if (a1.items.ptr[i] < a2.items.ptr[j])
+                {
+                    try a3.add(a1.items.ptr[i]);
+                    i += 1;
+                }
+
+                else if (a2.items.ptr[j] < a1.items.ptr[i])
+                {
+                    try a3.add(a2.items.ptr[j]);
+                    j += 1;
+                }
+
+                k += 1;
+ 
+            }
+
+            return a3;
+        }
 
 
-    };
-}
+        /// combines the common elements of two sorted arrays of unique elements 
+        /// if one of the arrays is not sorted, an error will be returned. Otherwise,
+        /// an Array of common elements will be returned. 
+        /// this fn takes in an allocator, and ptrs to two sorted arrays
+        pub fn intersectSet(allocator: mem.Allocator, a1: *Array(T), a2: *Array(T)) !Array(T) {
+            if (!a1.*.isSorted() or !a2.*.isSorted()) return ArrayErr.NotSorted;
+
+            var i: usize = 0; //a1
+            var j: usize = 0; //a2
+            var k: usize = 0; //a3
+
+            var a3 = Array(T).init(allocator);
+            var new_capacity = a1.capacity + a2.capacity;
+            var new_len = a1.length + a2.length;
+
+            try a3.grow(new_capacity);
+
+            while (k < new_len)
+            {
+                if (i >= a1.length or j >= a2.length) break; 
+                if (a1.items.ptr[i] < a2.items.ptr[j])
+                {
+                    i += 1;
+                }
+                else if (a2.items.ptr[j] < a1.items.ptr[i])
+                {
+                    j += 1;
+                }
+                // duplicate handling 
+                else if (a1.items.ptr[i] == a2.items.ptr[j]) {
+                    try a3.add(a1.items.ptr[i]); 
+                    i += 1;
+                    j += 1; 
+                }
+                k += 1;
+            }
+
+            return a3;
+        }
+
+
+        /// returns an array which contains only the elements unique to `a` between
+        /// both `a` and `b` sorted arrays.  you will need to pass in an allocator,
+        /// and the ordered array from which you would like the unique values as `a`
+        /// the set you are checking against will be `b`. the function will return an 
+        /// error if the sets are not ordered, otherwise it will return an ordered array,
+        /// containing elements unique to set a.
+        pub fn differenceSet(allocator: mem.Allocator, a: *Array(T), b: *Array(T)) !Array(T) {
+            if (!a.*.isSorted() or !b.*.isSorted()) return ArrayErr.NotSorted;
+
+            var i: usize = 0; //a1
+            var j: usize = 0; //a2
+            var k: usize = 0; //a3
+
+            var c = Array(T).init(allocator);
+            var search_len = a.length + b.length;
+
+            // it shouldnt be larger than a len in this case
+            try c.grow(a.length); 
+
+            while (k < search_len)
+            {
+                // we've run out of b items, but there are 
+                // still a items.  add the rest of the a's 
+                // to c and then break.
+                if (j >= b.length and i < a.length) {
+                    while (i < a.length)
+                    {
+                        try c.add(a.items.ptr[i]);
+                        i += 1;
+                    }
+                    break;
+                }
+
+                // we're out a's. break here 
+                if (i >= a.length) break;
+
+
+                // common el case: keep going, inc both i and j
+                if (a.items.ptr[i] == b.items.ptr[j]) {
+                    i += 1;
+                    j += 1;
+                }
+
+                // a is bigger than b, keep going and inc j
+                else if (a.items.ptr[i] > b.items.ptr[j]) {
+                    j += 1; // check next b spot
+                }
+
+                // a is determined unique, add and inc i
+                else if (a.items.ptr[i] < b.items.ptr[j]) {
+                    try c.add(a.items.ptr[i]);
+                    i += 1; // check next a spot
+                    k += 1; // move to next c spot
+                }
+
+                
+            }
+
+            return c;
+        }
+
+
+    }; // end return This {}
+} // end pub fn Array(T) {}
